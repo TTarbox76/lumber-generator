@@ -19,6 +19,15 @@ input, select, button {
   font-size: 16px;
 }
 
+button {
+  cursor: pointer;
+}
+
+input[type="range"] {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;
@@ -59,8 +68,30 @@ th {
   text-align: center;
 }
 
+/* Length options */
+#lengthOptions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+#lengthOptions label {
+  background: #f3f3f3;
+  padding: 6px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+#lengthOptions input {
+  transform: scale(1.2);
+}
+
 @media print {
-  input, select, button {
+  input, select, button, h3 {
     display: none;
   }
   body {
@@ -85,6 +116,20 @@ th {
 
 <label>Total Feet Needed</label>
 <input type="number" id="target" placeholder="Example: 2456">
+
+<h3>Allowed Lengths</h3>
+<div id="lengthOptions">
+  <label><input type="checkbox" value="8"> 8 ft</label>
+  <label><input type="checkbox" value="10"> 10 ft</label>
+  <label><input type="checkbox" value="12"> 12 ft</label>
+  <label><input type="checkbox" value="14"> 14 ft</label>
+  <label><input type="checkbox" value="16" checked> 16 ft</label>
+  <label><input type="checkbox" value="18"> 18 ft</label>
+  <label><input type="checkbox" value="20" checked> 20 ft</label>
+</div>
+
+<h3>Favor Longer Lengths: <span id="favorValue">5</span></h3>
+<input type="range" id="favorSlider" min="1" max="10" value="5">
 
 <button onclick="generate()">Generate Order</button>
 <button onclick="window.print()">Print Yard Ticket</button>
@@ -113,23 +158,56 @@ th {
 </div>
 
 <script>
+const slider = document.getElementById("favorSlider");
+const sliderValue = document.getElementById("favorValue");
+
+slider.addEventListener("input", () => {
+  sliderValue.textContent = slider.value;
+});
+
+function getEnabledLengths() {
+  return Array.from(
+    document.querySelectorAll("#lengthOptions input:checked")
+  )
+  .map(cb => parseInt(cb.value))
+  .sort((a, b) => b - a);
+}
+
+function pickLengthWeighted(lengths, bias) {
+  const maxLen = Math.max(...lengths);
+  const weighted = [];
+
+  lengths.forEach(len => {
+    const weight = Math.max(1, Math.round((len / maxLen) * bias * 2));
+    for (let i = 0; i < weight; i++) {
+      weighted.push(len);
+    }
+  });
+
+  return weighted[Math.floor(Math.random() * weighted.length)];
+}
+
 function generate() {
   const target = Number(document.getElementById("target").value);
   const type = document.getElementById("type").value;
   if (!target || target <= 0) return;
 
-  const rowSize = type === "2x4" ? 13 : 8;
+  const lengths = getEnabledLengths();
+  if (lengths.length === 0) {
+    alert("You must select at least one length.");
+    return;
+  }
 
-  const weighted = [20,20,20,20,16,16,16,18,14,12,10,8];
-  const lengths = [20,18,16,14,12,10,8];
+  const bias = parseInt(slider.value);
+  const rowSize = type === "2x4" ? 13 : 8;
 
   let rows = {};
   let loose = {};
   let total = 0;
 
-  // SAFE row fill — limited iterations so it never hangs
+  // Row fill (biased toward longer lengths)
   for (let i = 0; i < 500; i++) {
-    const len = weighted[Math.floor(Math.random() * weighted.length)];
+    const len = pickLengthWeighted(lengths, bias);
     const rowFeet = len * rowSize;
 
     if (total + rowFeet <= target) {
@@ -138,7 +216,7 @@ function generate() {
     }
   }
 
-  // Finish exact with loose sticks
+  // Loose fill (exact)
   let remainder = target - total;
   for (let len of lengths) {
     while (remainder >= len) {
@@ -199,3 +277,4 @@ function generate() {
 
 </body>
 </html>
+
