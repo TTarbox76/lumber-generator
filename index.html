@@ -8,8 +8,19 @@
 body {
   font-family: Arial, sans-serif;
   padding: 20px;
-  max-width: 800px;
+  max-width: 900px;
   margin: auto;
+}
+
+/* Header / Logo */
+.header {
+  text-align: center;
+  margin-bottom: 15px;
+}
+
+.header img {
+  max-width: 260px;
+  height: auto;
 }
 
 input, select, button {
@@ -58,7 +69,9 @@ th {
 .ticket-info {
   display: flex;
   justify-content: space-between;
+  flex-wrap: wrap;
   font-weight: bold;
+  gap: 10px;
 }
 
 .summary {
@@ -68,12 +81,18 @@ th {
   text-align: center;
 }
 
+.status {
+  margin-top: 8px;
+  text-align: center;
+  font-weight: bold;
+}
+
 /* Length options */
 #lengthOptions {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 
 #lengthOptions label {
@@ -90,8 +109,14 @@ th {
   transform: scale(1.2);
 }
 
+.length-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
 @media print {
-  input, select, button, h3 {
+  input, select, button, h3, .length-buttons {
     display: none;
   }
   body {
@@ -106,7 +131,15 @@ th {
 
 <body>
 
+<!-- LOGO HEADER -->
+<div class="header">
+  <img src="builders-firstsource.png" alt="Builders FirstSource Logo">
+</div>
+
 <h2>Exact Lumber Generator</h2>
+
+<label>Customer / Job</label>
+<input type="text" id="job" placeholder="Customer or Job Name">
 
 <label>Lumber Type</label>
 <select id="type">
@@ -128,8 +161,20 @@ th {
   <label><input type="checkbox" value="20" checked> 20 ft</label>
 </div>
 
+<div class="length-buttons">
+  <button onclick="selectAllLengths()">Select All</button>
+  <button onclick="clearLengths()">Clear</button>
+</div>
+
 <h3>Favor Longer Lengths: <span id="favorValue">5</span></h3>
 <input type="range" id="favorSlider" min="1" max="10" value="5">
+
+<h3>Yard Presets</h3>
+<div class="length-buttons">
+  <button onclick="applyPreset('clean')">Clean Pull</button>
+  <button onclick="applyPreset('long')">Long Heavy</button>
+  <button onclick="applyPreset('minimal')">Minimal Loose</button>
+</div>
 
 <button onclick="generate()">Generate Order</button>
 <button onclick="window.print()">Print Yard Ticket</button>
@@ -138,8 +183,10 @@ th {
   <h2>YARD PICK TICKET</h2>
 
   <div class="ticket-info">
+    <div id="ticketJob"></div>
     <div id="ticketType"></div>
     <div id="ticketFeet"></div>
+    <div id="ticketMeta"></div>
   </div>
 
   <table>
@@ -155,46 +202,82 @@ th {
   </table>
 
   <div class="summary" id="summary"></div>
+  <div class="status" id="status"></div>
 </div>
 
 <script>
 const slider = document.getElementById("favorSlider");
 const sliderValue = document.getElementById("favorValue");
+slider.addEventListener("input", () => sliderValue.textContent = slider.value);
 
-slider.addEventListener("input", () => {
+function selectAllLengths() {
+  document.querySelectorAll('#lengthOptions input').forEach(cb => cb.checked = true);
+}
+
+function clearLengths() {
+  document.querySelectorAll('#lengthOptions input').forEach(cb => cb.checked = false);
+}
+
+function setLengths(values) {
+  document.querySelectorAll('#lengthOptions input').forEach(cb => {
+    cb.checked = values.includes(parseInt(cb.value));
+  });
+}
+
+function applyPreset(preset) {
+  clearLengths();
+
+  if (preset === "clean") {
+    setLengths([16, 20]);
+    slider.value = 6;
+  }
+
+  if (preset === "long") {
+    setLengths([14, 16, 18, 20]);
+    slider.value = 9;
+  }
+
+  if (preset === "minimal") {
+    setLengths([12, 14, 16, 20]);
+    slider.value = 7;
+  }
+
   sliderValue.textContent = slider.value;
-});
+
+  if (document.getElementById("target").value) {
+    generate();
+  }
+}
 
 function getEnabledLengths() {
-  return Array.from(
-    document.querySelectorAll("#lengthOptions input:checked")
-  )
-  .map(cb => parseInt(cb.value))
-  .sort((a, b) => b - a);
+  return Array.from(document.querySelectorAll('#lengthOptions input:checked'))
+    .map(cb => parseInt(cb.value))
+    .sort((a, b) => b - a);
 }
 
 function pickLengthWeighted(lengths, bias) {
   const maxLen = Math.max(...lengths);
   const weighted = [];
-
   lengths.forEach(len => {
     const weight = Math.max(1, Math.round((len / maxLen) * bias * 2));
-    for (let i = 0; i < weight; i++) {
-      weighted.push(len);
-    }
+    for (let i = 0; i < weight; i++) weighted.push(len);
   });
-
   return weighted[Math.floor(Math.random() * weighted.length)];
 }
 
 function generate() {
   const target = Number(document.getElementById("target").value);
+  const job = document.getElementById("job").value || "—";
   const type = document.getElementById("type").value;
-  if (!target || target <= 0) return;
+
+  if (!target || target <= 0) {
+    alert("Enter a valid target footage.");
+    return;
+  }
 
   const lengths = getEnabledLengths();
   if (lengths.length === 0) {
-    alert("You must select at least one length.");
+    alert("Select at least one allowed length.");
     return;
   }
 
@@ -205,18 +288,15 @@ function generate() {
   let loose = {};
   let total = 0;
 
-  // Row fill (biased toward longer lengths)
   for (let i = 0; i < 500; i++) {
     const len = pickLengthWeighted(lengths, bias);
     const rowFeet = len * rowSize;
-
     if (total + rowFeet <= target) {
       rows[len] = (rows[len] || 0) + 1;
       total += rowFeet;
     }
   }
 
-  // Loose fill (exact)
   let remainder = target - total;
   for (let len of lengths) {
     while (remainder >= len) {
@@ -225,7 +305,6 @@ function generate() {
     }
   }
 
-  // Render output
   const tbody = document.getElementById("results");
   tbody.innerHTML = "";
 
@@ -237,39 +316,34 @@ function generate() {
     const r = rows[len];
     const sticks = r * rowSize;
     const feet = sticks * len;
-
     totalRows += r;
     finalTotal += feet;
-
-    tbody.innerHTML += `
-      <tr>
-        <td>${len}'</td>
-        <td>${sticks}</td>
-        <td>${r} rows</td>
-        <td>${feet}</td>
-      </tr>`;
+    tbody.innerHTML += `<tr><td>${len}'</td><td>${sticks}</td><td>${r} rows</td><td>${feet}</td></tr>`;
   });
 
   Object.keys(loose).sort((a,b)=>b-a).forEach(len => {
     const sticks = loose[len];
     const feet = sticks * len;
-
     totalLoose += sticks;
     finalTotal += feet;
-
-    tbody.innerHTML += `
-      <tr>
-        <td>${len}'</td>
-        <td>${sticks}</td>
-        <td>Loose</td>
-        <td>${feet}</td>
-      </tr>`;
+    tbody.innerHTML += `<tr><td>${len}'</td><td>${sticks}</td><td>Loose</td><td>${feet}</td></tr>`;
   });
 
+  const diff = finalTotal - target;
+
+  document.getElementById("ticketJob").innerText = `Job: ${job}`;
   document.getElementById("ticketType").innerText = `Material: ${type}`;
   document.getElementById("ticketFeet").innerText = `Total: ${finalTotal} ft`;
+  document.getElementById("ticketMeta").innerText =
+    `Ticket #${Date.now().toString().slice(-6)} • ${new Date().toLocaleString()}`;
+
   document.getElementById("summary").innerText =
     `Forklift Pull: ${totalRows} full rows + ${totalLoose} loose sticks`;
+
+  document.getElementById("status").innerText =
+    diff === 0 ? "✅ Exact Match" :
+    diff > 0 ? `⚠ Over by ${diff} ft` :
+               `⚠ Under by ${Math.abs(diff)} ft`;
 
   document.getElementById("ticket").style.display = "block";
 }
